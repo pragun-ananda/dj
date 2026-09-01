@@ -141,3 +141,15 @@ class TidalClient:
                     )
                 )
             return results
+
+    def get_playback_info(self, track_id: str) -> Dict[str, Any]:
+        """Fetch playback streaming manifest/url for a track."""
+        if not self.is_authenticated:
+            return {"track_id": track_id, "url": f"mock://tidal.stream/{track_id}.flac", "audio_mode": "LOSSLESS"}
+        url = f"{self.BASE_URL}/tracks/{track_id}/playbackinfopostpaywall"
+        params = {"countryCode": self.country_code, "audioquality": "LOSSLESS", "playbackmode": "STREAM"}
+        with httpx.Client(timeout=15.0) as client:
+            resp = client.get(url, params=params, headers=self._get_headers())
+            if resp.status_code == 200:
+                return resp.json()
+            return {"track_id": track_id, "url": f"mock://tidal.stream/{track_id}.flac", "audio_mode": "LOSSLESS"}

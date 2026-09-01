@@ -374,5 +374,79 @@ def search(
     console.print(table)
 
 
+@app.command(name="mix-path")
+def mix_path(
+    start_id: int = typer.Argument(..., help="Track ID of opening song"),
+    target_id: int = typer.Argument(..., help="Track ID of target climax song"),
+    max_hops: int = typer.Option(5, "--hops", "-h", help="Maximum intermediate track steps"),
+    db_path: Optional[Path] = typer.Option(None, "--db", help="Custom SQLite database file"),
+):
+    """Find the optimal harmonic setlist path from Track A to Track B."""
+    from sonicdj.sandbox.transition_graph import TransitionGraphEngine
+
+    db = get_db(f"sqlite:///{db_path}" if db_path else None)
+    engine = TransitionGraphEngine(db)
+
+    steps = engine.find_optimal_set_path(start_id, target_id, max_hops=max_hops)
+    if not steps:
+        console.print("[bold red]Error:[/] Could not compute a path between the specified tracks.")
+        raise typer.Exit(1)
+
+    console.print(Panel.fit(f"[bold cyan]🔀 Harmonic DJ Setlist Path: Track #{start_id} ➔ Track #{target_id}[/]", border_style="cyan"))
+
+    table = Table(title=f"Optimal Set Progression ({len(steps)} Tracks)", border_style="green")
+    table.add_column("Step", justify="center", style="bold")
+    table.add_column("Track (Artist - Title)", style="bold white")
+    table.add_column("Key", justify="center", style="bold yellow")
+    table.add_column("BPM", justify="right", style="cyan")
+    table.add_column("Energy", justify="right", style="magenta")
+    table.add_column("Transition Advice", style="italic yellow")
+
+    for step in steps:
+        t = step.track
+        bpm_str = f"{t.bpm:.1f}" if t.bpm else "—"
+        energy_str = f"{int(t.energy * 100)}%" if t.energy else "—"
+        advice = step.transition_from_prev.explanation if step.transition_from_prev else "[bold green]▶ Opening Track[/]"
+
+        table.add_row(
+            f"Step {step.step_number}",
+            f"{t.artist} - {t.title}",
+            t.camelot or "—",
+            bpm_str,
+            energy_str,
+            advice,
+        )
+
+    console.print(table)
+
+
+@app.command()
+def audition(
+    track_a: Path = typer.Argument(..., help="Path to Deck A audio file (outgoing track)"),
+    track_b: Path = typer.Argument(..., help="Path to Deck B audio file (incoming track)"),
+    bars: int = typer.Option(16, "--bars", "-b", help="Length of audition transition in bars (8, 16, or 32)"),
+    output: Optional[Path] = typer.Option(None, "--out", "-o", help="Output WAV file path for rendered mix preview"),
+):
+    """Audition a seamless 16/32-bar DJ mix transition between two audio files."""
+    from sonicdj.sandbox.quick_mix_engine import QuickMixAuditionEngine
+
+    track_a = track_a.resolve()
+    track_b = track_b.resolve()
+
+    if not track_a.exists() or not track_b.exists():
+        console.print(f"[bold red]Error:[/] One or both audio files do not exist.")
+        raise typer.Exit(1)
+
+    out_path = output or Path("quick_mix_audition.wav")
+    console.print(Panel.fit(f"[bold cyan]🎧 Rendering {bars}-Bar Virtual DJ Mix Transition[/]\nDeck A: {track_a.name}\nDeck B: {track_b.name}", border_style="cyan"))
+
+    mix, sr = QuickMixAuditionEngine.render_16bar_audition(
+        track_a, track_b, output_wav_path=out_path, num_bars=bars
+    )
+
+    duration_sec = len(mix) / float(sr)
+    console.print(f"[bold green]✓[/] Rendered {duration_sec:.1f}s transition preview to [cyan]{out_path}[/]")
+
+
 if __name__ == "__main__":
     app()
