@@ -13,6 +13,8 @@ from sonicdj.analysis.cue_generator import CueGenerator, CompleteTrackAnalysis
 from sonicdj.metadata.id3_engine import AudioTagEngine
 from sonicdj.metadata.models import TrackMetadata
 from sonicdj.db.repository import TrackRepository, DatabaseManager
+from sonicdj.db.vector_store import VectorStore
+from sonicdj.embeddings.audio_encoder import MultimodalAudioEncoder
 
 
 @dataclass
@@ -32,6 +34,7 @@ class AudioAnalyzer:
     def __init__(self, db: Optional[DatabaseManager] = None):
         self.db = db
         self.repo = TrackRepository(db) if db else None
+        self.vector_store = VectorStore(db) if db else None
 
     def analyze_file(
         self,
@@ -126,7 +129,22 @@ class AudioAnalyzer:
                 "comments": meta.comments,
                 "analyzed_at": datetime.utcnow(),
             }
-            self.repo.upsert_track(track_dict, cues=cue_dicts)
+            db_track = self.repo.upsert_track(track_dict, cues=cue_dicts)
+
+            if self.vector_store and db_track:
+                try:
+                    audio, sr = AudioLoader.load_audio(file_path, target_sr=22050, max_duration_sec=120.0)
+                    emb_vec = MultimodalAudioEncoder.encode_audio(
+                        audio,
+                        sr=sr,
+                        bpm=meta.bpm,
+                        camelot=meta.camelot,
+                        energy=meta.energy,
+                        has_vocals=analysis.vocal_energy_info.has_vocals,
+                    )
+                    self.vector_store.upsert_embedding(db_track.id, emb_vec)
+                except Exception:
+                    pass
 
         return file_path, analysis
 

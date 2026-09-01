@@ -302,5 +302,77 @@ def info(file_path: Path = typer.Argument(..., help="Path to audio file")):
     console.print(table)
 
 
+@app.command()
+def search(
+    query: Optional[str] = typer.Argument(None, help="Natural language description of music, vibe, or mood"),
+    ref_id: Optional[int] = typer.Option(None, "--ref", help="Reference track ID to find compatible mix companions"),
+    camelot: Optional[str] = typer.Option(None, "--key", "-k", help="Target Camelot key (e.g. 8A, 9B)"),
+    bpm: Optional[float] = typer.Option(None, "--bpm", "-b", help="Target BPM tempo"),
+    bpm_tolerance: float = typer.Option(6.0, "--tolerance", "-t", help="BPM tolerance window (+/- BPM)"),
+    min_energy: Optional[float] = typer.Option(None, "--min-energy", help="Minimum energy score (0.0 to 1.0)"),
+    limit: int = typer.Option(10, "--limit", "-n", help="Maximum number of search results"),
+    db_path: Optional[Path] = typer.Option(None, "--db", help="Custom SQLite database file"),
+):
+    """Semantic vector search over audio collection with real-time harmonic DJ constraints."""
+    from sonicdj.search.hybrid_engine import HybridSearchEngine
+
+    db = get_db(f"sqlite:///{db_path}" if db_path else None)
+    engine = HybridSearchEngine(db)
+
+    header = f"🔍 Semantic & Harmonic DJ Search"
+    if query:
+        header += f" | Prompt: '{query}'"
+    if camelot:
+        header += f" | Key: {camelot}"
+    if bpm:
+        header += f" | BPM: {bpm:.1f} (±{bpm_tolerance:.1f})"
+
+    console.print(Panel.fit(f"[bold cyan]{header}[/]", border_style="cyan"))
+
+    results = engine.search(
+        prompt=query,
+        reference_track_id=ref_id,
+        target_camelot=camelot,
+        target_bpm=bpm,
+        bpm_tolerance=bpm_tolerance,
+        min_energy=min_energy,
+        limit=limit,
+    )
+
+    if not results:
+        console.print("[yellow]No matching tracks found matching your harmonic/semantic criteria.[/yellow]")
+        return
+
+    table = Table(title=f"Ranked Mix Results ({len(results)} matches)", border_style="green")
+    table.add_column("Rank", justify="center", style="bold")
+    table.add_column("Match", justify="right", style="bold green")
+    table.add_column("Track (Artist - Title)", style="bold white")
+    table.add_column("Key", justify="center", style="bold yellow")
+    table.add_column("BPM", justify="right", style="cyan")
+    table.add_column("Energy", justify="right", style="magenta")
+    table.add_column("Subgenre", style="dim")
+    table.add_column("Mix Recommendation", style="italic yellow")
+
+    for idx, r in enumerate(results):
+        t = r.track
+        match_pct = f"{int(r.composite_score * 100)}%"
+        bpm_str = f"{t.bpm:.1f}" if t.bpm else "—"
+        energy_str = f"{int(t.energy * 100)}%" if t.energy else "—"
+        track_str = f"{t.artist} - {t.title}"
+
+        table.add_row(
+            f"#{idx+1}",
+            match_pct,
+            track_str,
+            f"{t.camelot or '—'}",
+            bpm_str,
+            energy_str,
+            r.subgenre_info.primary_subgenre,
+            r.mix_recommendation,
+        )
+
+    console.print(table)
+
+
 if __name__ == "__main__":
     app()
