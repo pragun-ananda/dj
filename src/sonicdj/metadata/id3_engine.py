@@ -89,6 +89,22 @@ class AudioTagEngine:
             if raw_key:
                 meta.key_raw = raw_key
 
+        # Extract cues from comments if present
+        if meta.comments and not meta.cues:
+            import re
+            pattern = r"\[([^:]+):\s*(\d+)s\]"
+            matches = re.findall(pattern, meta.comments)
+            if matches:
+                meta.cues = [
+                    CueMetadata(
+                        name=name.strip(),
+                        timestamp_ms=int(sec) * 1000,
+                        hot_cue_index=idx,
+                        cue_type="intro" if "intro" in name.lower() else ("drop" if "drop" in name.lower() else "hot_cue")
+                    )
+                    for idx, (name, sec) in enumerate(matches)
+                ]
+
         return meta
 
     @staticmethod
