@@ -197,6 +197,83 @@ def export_djay(
 
 
 @app.command()
+def analyze(
+    target_path: Path = typer.Argument(..., help="Audio file or folder to analyze"),
+    auto_tag: bool = typer.Option(True, "--tag/--no-tag", help="Write analyzed tags directly to audio files"),
+    workers: int = typer.Option(4, "--workers", "-w", help="Number of parallel analyzer workers"),
+    db_path: Optional[Path] = typer.Option(None, "--db", help="Custom SQLite database file"),
+):
+    """Run deep MIR analysis (BPM, Camelot Key, Phrasing, Energy, Vocals, Auto-Cues)."""
+    from sonicdj.analysis.batch_analyzer import AudioAnalyzer
+    db = get_db(f"sqlite:///{db_path}" if db_path else None)
+    analyzer = AudioAnalyzer(db)
+
+    target_path = target_path.resolve()
+    if not target_path.exists():
+        console.print(f"[bold red]Error:[/] Path '{target_path}' does not exist.")
+        raise typer.Exit(1)
+
+    if target_path.is_file():
+        console.print(Panel.fit(f"[bold cyan]Analyzing Single Track:[/] {target_path.name}", border_style="cyan"))
+        _, analysis = analyzer.analyze_and_enrich_track(target_path, auto_tag_file=auto_tag)
+
+        table = Table(title=f"Analysis: {target_path.name}", border_style="green")
+        table.add_column("Metric", style="bold")
+        table.add_column("Extracted Value", style="yellow")
+
+        table.add_row("Camelot Key", f"{analysis.key_info.camelot} ({analysis.key_info.musical_key}) [conf: {int(analysis.key_info.confidence*100)}%]")
+        table.add_row("Tuning / Drift", f"{analysis.key_info.tuning_hz} Hz ({analysis.key_info.pitch_drift_cents:+0.1f} cents)")
+        table.add_row("Tempo (BPM)", f"{analysis.phrasing_info.bpm:.2f} BPM [conf: {int(analysis.phrasing_info.confidence*100)}%]")
+        table.add_row("Downbeat (Bar 1)", f"{analysis.phrasing_info.first_downbeat_sec:.3f}s")
+        table.add_row("Overall Energy", f"{int(analysis.vocal_energy_info.overall_energy * 100)}%")
+        table.add_row("Vocal Presence", f"{analysis.vocal_energy_info.vocal_presence_percent}% (Intro inst: {analysis.vocal_energy_info.instrumental_intro_sec}s)")
+        table.add_row("Generated Cues", f"{len(analysis.generated_cues)} Hot Cues")
+        table.add_row("djay Pro Comment", analysis.summary_comment)
+        console.print(table)
+
+        # Print Cue Breakdown Table
+        cue_table = Table(title="Generated djay Pro Hot Cues", border_style="magenta")
+        cue_table.add_column("Hot Cue", justify="center", style="bold")
+        cue_table.add_column("Name", style="bold white")
+        cue_table.add_column("Time", justify="right", style="cyan")
+        cue_table.add_column("Type", style="dim")
+
+        for idx, cue in enumerate(analysis.generated_cues):
+            cue_letter = chr(ord('A') + (cue.hot_cue_index if cue.hot_cue_index is not None else idx))
+            cue_time = f"{cue.timestamp_ms / 1000.0:.2f}s"
+            cue_table.add_row(f"Pad {cue_letter}", cue.name, cue_time, cue.cue_type)
+        console.print(cue_table)
+
+    else:
+        console.print(Panel.fit(f"[bold cyan]SonicDJ Batch Audio Analyzer[/]\nDirectory: {target_path}", border_style="cyan"))
+        with Progress(
+            SpinnerColumn(),
+            TextColumn("[progress.description]{task.description}"),
+            BarColumn(),
+            TaskProgressColumn(),
+            console=console,
+        ) as progress:
+            task = progress.add_task("Analyzing audio collection...", total=None)
+
+            def on_progress(file_path: Path, stats):
+                progress.update(task, total=stats.total_found, completed=stats.analyzed, description=f"Analyzed: {file_path.name[:30]}")
+
+            stats = analyzer.batch_analyze_directory(
+                target_path, auto_tag_file=auto_tag, max_workers=workers, progress_callback=on_progress
+            )
+
+        # Summary
+        table = Table(title="Batch Analysis Summary", border_style="green")
+        table.add_column("Metric", style="bold")
+        table.add_column("Count", style="cyan")
+        table.add_row("Total Files Discovered", str(stats.total_found))
+        table.add_row("Successfully Analyzed", str(stats.analyzed))
+        table.add_row("Tags Embedded into Files", str(stats.tagged))
+        table.add_row("Failed Analyses", str(stats.failed))
+        console.print(table)
+
+
+@app.command()
 def info(file_path: Path = typer.Argument(..., help="Path to audio file")):
     """Inspect all extracted audio properties and tags of a file."""
     file_path = file_path.resolve()
