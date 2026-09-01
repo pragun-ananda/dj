@@ -80,7 +80,7 @@ class VocalEnergyProfiler:
                 instrumental_outro_sec=total_duration,
             )
 
-        # STFT for spectral formant band analysis (300 Hz - 3500 Hz vocal range)
+        # STFT for singer formant band analysis (800 Hz - 3200 Hz vocal formant vs 50 - 600 Hz low instrument band)
         n_fft = 2048
         hop_length = 1024
         frequencies, times, Zxx = stft(
@@ -88,14 +88,14 @@ class VocalEnergyProfiler:
         )
         mag = np.abs(Zxx)
 
-        vocal_mask = (frequencies >= 300.0) & (frequencies <= 3500.0)
-        total_mask = (frequencies >= 60.0) & (frequencies <= 10000.0)
+        formant_mask = (frequencies >= 800.0) & (frequencies <= 3200.0)
+        low_mask = (frequencies >= 50.0) & (frequencies <= 600.0)
 
-        vocal_power = np.sum(mag[vocal_mask, :], axis=0)
-        total_power = np.sum(mag[total_mask, :], axis=0) + 1e-8
+        formant_power = np.sum(mag[formant_mask, :], axis=0)
+        low_power = np.sum(mag[low_mask, :], axis=0) + 1e-6
 
-        # Ratio of vocal band energy to overall spectrum
-        vocal_ratio = vocal_power / total_power
+        # Ratio of vocal formant energy to backing rhythm
+        vocal_ratio = formant_power / low_power
 
         # Smooth vocal envelope over ~1.5 second windows
         smooth_frames = int(round(1.5 * (sr / float(hop_length))))

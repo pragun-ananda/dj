@@ -34,7 +34,7 @@ class PhrasingEngine:
 
     @classmethod
     def compute_onset_envelope(
-        cls, audio: np.ndarray, sr: int = 22050, hop_length: int = 512
+        cls, audio: np.ndarray, sr: int = 22050, hop_length: int = 256
     ) -> Tuple[np.ndarray, float]:
         """
         Computes spectral flux onset novelty envelope.
@@ -63,7 +63,7 @@ class PhrasingEngine:
         cls, onset_env: np.ndarray, fps: float, min_bpm: float = 75.0, max_bpm: float = 175.0
     ) -> Tuple[float, float]:
         """
-        Estimates BPM using autocorrelation of the onset envelope.
+        Estimates BPM using autocorrelation of the onset envelope with parabolic lag refinement.
         Returns (bpm, confidence).
         """
         if len(onset_env) < 50:
@@ -81,16 +81,32 @@ class PhrasingEngine:
         if max_lag >= len(corr) or min_lag >= max_lag:
             return 120.0, 0.5
 
-        valid_corr = corr[min_lag:max_lag]
-        best_lag_rel = np.argmax(valid_corr)
-        best_lag = min_lag + best_lag_rel
+        # Apply log-normal DJ tempo prior centered at 124 BPM
+        lags = np.arange(len(corr))
+        bpms = (60.0 * fps) / (lags + 1e-6)
+        prior = np.exp(-0.5 * ((np.log2(bpms / 124.0) / 0.35) ** 2))
+        weighted_corr = corr * prior
+
+        valid_corr = weighted_corr[min_lag:max_lag]
+        best_lag_rel = int(np.argmax(valid_corr))
+        best_lag = float(min_lag + best_lag_rel)
+
+        # Parabolic peak interpolation for sub-BPM precision
+        if 0 < best_lag_rel < len(valid_corr) - 1:
+            y_left = float(valid_corr[best_lag_rel - 1])
+            y_mid = float(valid_corr[best_lag_rel])
+            y_right = float(valid_corr[best_lag_rel + 1])
+            denom = 2.0 * (2.0 * y_mid - y_left - y_right)
+            if abs(denom) > 1e-6:
+                delta = (y_right - y_left) / denom
+                best_lag = best_lag + delta
 
         raw_bpm = (60.0 * fps) / float(best_lag)
 
         # Double / Half-time preference towards standard electronic DJ tempo (118 - 140 BPM)
-        if raw_bpm < 90.0:
+        if raw_bpm < 85.0:
             raw_bpm *= 2.0
-        elif raw_bpm > 180.0:
+        elif raw_bpm > 175.0:
             raw_bpm /= 2.0
 
         # Confidence calculation based on peak prominence
@@ -128,8 +144,8 @@ class PhrasingEngine:
         beat_interval = 60.0 / bpm
         bar_duration = beat_interval * 4.0  # 4/4 time signature standard
 
-        # Find first downbeat (peak onset within the first 4 bars)
-        first_window_frames = int(min(len(onset_env), bar_duration * 4 * fps))
+        # Find first downbeat (peak onset within the first bar)
+        first_window_frames = int(min(len(onset_env), bar_duration * fps))
         if first_window_frames > 0:
             first_downbeat_frame = np.argmax(onset_env[:first_window_frames])
             first_downbeat_sec = float(first_downbeat_frame / fps)
