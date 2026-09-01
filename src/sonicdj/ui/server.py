@@ -1,6 +1,6 @@
 import json
 import urllib.parse
-from http.server import HTTPServer, BaseHTTPRequestHandler
+from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
 from threading import Thread
 from typing import Optional, Dict, Any
 
@@ -130,89 +130,230 @@ class SonicDJServerHandler(BaseHTTPRequestHandler):
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
         body { background-color: #0b0f19; color: #e2e8f0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
-        .gradient-deck { background: linear-gradient(180deg, #161e2e 0%, #0d1321 100%); }
+        .gradient-deck-1 { background: linear-gradient(180deg, #132238 0%, #0c1524 100%); }
+        .gradient-deck-2 { background: linear-gradient(180deg, #231838 0%, #150d24 100%); }
+        .waveform-bar { transition: height 0.2s ease; }
     </style>
 </head>
-<body class="p-6">
+<body class="p-6 min-h-screen">
     <div class="max-w-7xl mx-auto space-y-6">
         <!-- Top Bar -->
-        <header class="flex justify-between items-center bg-gray-900/80 p-4 rounded-xl border border-gray-800 backdrop-blur">
+        <header class="flex justify-between items-center bg-gray-900/90 p-4 rounded-2xl border border-gray-800 backdrop-blur shadow-2xl">
             <div class="flex items-center space-x-3">
-                <div class="w-4 h-4 rounded-full bg-cyan-500 animate-pulse"></div>
-                <h1 class="text-2xl font-black tracking-wider text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 to-indigo-500">SONICDJ</h1>
-                <span class="text-xs px-2.5 py-1 rounded-full bg-cyan-950 text-cyan-400 border border-cyan-800 font-semibold">AI CO-PILOT ACTIVE</span>
+                <div class="w-3.5 h-3.5 rounded-full bg-cyan-400 animate-ping"></div>
+                <h1 class="text-2xl font-black tracking-wider text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 via-indigo-400 to-purple-500">SONICDJ</h1>
+                <span class="text-xs px-2.5 py-1 rounded-full bg-cyan-950/80 text-cyan-300 border border-cyan-700/50 font-semibold tracking-wide">LIVE CO-PILOT ACTIVE</span>
             </div>
             <div class="flex items-center space-x-4 text-xs">
-                <div class="flex items-center space-x-2 bg-gray-800 px-3 py-1.5 rounded-lg">
+                <div class="flex items-center space-x-2 bg-gray-800/80 border border-gray-700 px-3 py-1.5 rounded-xl">
                     <span class="w-2.5 h-2.5 rounded-full bg-emerald-400"></span>
-                    <span class="text-gray-300 font-medium">Pioneer DDJ-FLX4 Connected</span>
+                    <span class="text-gray-200 font-medium">Pioneer DDJ-FLX4 Connected</span>
                 </div>
-                <div class="bg-gray-800 px-3 py-1.5 rounded-lg text-gray-300 font-medium">
-                    djay Pro Sync: <span class="text-emerald-400">Ready</span>
+                <div class="bg-gray-800/80 border border-gray-700 px-3 py-1.5 rounded-xl text-gray-200 font-medium">
+                    Algoriddim djay Pro: <span class="text-emerald-400">Synced</span>
                 </div>
             </div>
         </header>
 
+        <!-- Warnings Banner Area -->
+        <div id="warningsBanner" class="hidden space-y-2"></div>
+
         <!-- Search Bar -->
         <div class="relative">
-            <input type="text" id="searchInput" placeholder="Search by vibe, mood, or prompt (e.g. 'dark hypnotic afrohouse with heavy rolling bassline')..." 
-                class="w-full bg-gray-900/90 border border-gray-700 rounded-xl px-5 py-4 text-white placeholder-gray-500 focus:outline-none focus:border-cyan-500 shadow-xl text-lg">
-            <div class="absolute right-4 top-4 text-gray-400 text-sm">Press Enter to Search</div>
+            <input type="text" id="searchInput" placeholder="🔍 Search library by vibe, prompt, mood (e.g. 'dark hypnotic afrohouse', 'uplifting vocal house', '126 bpm techno')..." 
+                class="w-full bg-gray-900/90 border border-gray-700 rounded-2xl px-6 py-4 text-white placeholder-gray-500 focus:outline-none focus:border-cyan-500 shadow-2xl text-lg transition">
         </div>
 
         <!-- Main Decks Layout -->
         <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
             <!-- Deck 1 -->
-            <div class="gradient-deck rounded-2xl p-6 border border-cyan-900/40 shadow-2xl relative">
-                <div class="flex justify-between items-center mb-4">
-                    <span class="text-sm font-bold text-cyan-400 uppercase tracking-wider">Deck 1 (Master)</span>
-                    <span class="px-2 py-0.5 rounded bg-cyan-950 text-cyan-300 text-xs font-mono font-bold">KEY 8A | 123.0 BPM</span>
+            <div class="gradient-deck-1 rounded-2xl p-6 border border-cyan-900/50 shadow-2xl relative" id="deck1Card">
+                <div class="flex justify-between items-center mb-3">
+                    <div class="flex items-center space-x-2">
+                        <span class="w-2.5 h-2.5 rounded-full bg-cyan-400"></span>
+                        <span class="text-xs font-bold text-cyan-400 uppercase tracking-widest" id="d1-badge">DECK 1 (MASTER)</span>
+                    </div>
+                    <span class="px-2.5 py-1 rounded-lg bg-cyan-950 text-cyan-300 text-xs font-mono font-bold border border-cyan-800" id="d1-key-bpm">8A • 123.0 BPM</span>
                 </div>
-                <h2 class="text-xl font-bold text-white mb-1" id="d1-title">Black Coffee - Subconsciously</h2>
-                <p class="text-sm text-gray-400 mb-4" id="d1-genre">Afro House • Energy: 85%</p>
-                <div class="h-20 bg-gray-950/80 rounded-lg flex items-center justify-center border border-gray-800 relative overflow-hidden mb-4">
-                    <div class="absolute inset-y-0 left-0 bg-cyan-500/20 w-3/5"></div>
-                    <div class="absolute left-3/5 top-0 bottom-0 w-0.5 bg-cyan-400"></div>
-                    <span class="text-xs text-cyan-300 font-mono z-10">[Pad A: Intro] • [Pad B: Vocal 15s] • [Pad C: Main Drop 45s]</span>
+                <h2 class="text-2xl font-black text-white truncate mb-1" id="d1-title">Black Coffee - Subconsciously</h2>
+                <p class="text-xs text-gray-400 mb-4" id="d1-genre">Afro House • Energy: 85% • Instrumental Intro: 16 Bars</p>
+                
+                <!-- Waveform Canvas -->
+                <div class="h-24 bg-gray-950 rounded-xl flex items-end justify-between px-3 py-2 border border-cyan-950 relative overflow-hidden mb-4">
+                    <div class="absolute inset-0 bg-cyan-500/10 w-2/3"></div>
+                    <div class="absolute left-2/3 top-0 bottom-0 w-0.5 bg-cyan-400 z-10 shadow-[0_0_8px_#22d3ee]"></div>
+                    <div class="absolute top-2 left-3 text-[10px] text-cyan-300 font-mono z-10">[Pad A: Intro 0.0s] [Pad B: Vocal 15.0s] [Pad C: Drop 45.0s] [Pad D: Outro]</div>
+                    <!-- Waveform Bars Mock -->
+                    <div class="w-1.5 bg-cyan-500/60 h-8 rounded-t"></div>
+                    <div class="w-1.5 bg-cyan-500/70 h-12 rounded-t"></div>
+                    <div class="w-1.5 bg-cyan-500/80 h-16 rounded-t"></div>
+                    <div class="w-1.5 bg-cyan-400 h-20 rounded-t"></div>
+                    <div class="w-1.5 bg-cyan-400 h-14 rounded-t"></div>
+                    <div class="w-1.5 bg-cyan-500/80 h-18 rounded-t"></div>
+                    <div class="w-1.5 bg-cyan-400 h-22 rounded-t"></div>
+                    <div class="w-1.5 bg-cyan-500/70 h-12 rounded-t"></div>
+                    <div class="w-1.5 bg-cyan-500/60 h-10 rounded-t"></div>
                 </div>
             </div>
 
             <!-- Deck 2 -->
-            <div class="gradient-deck rounded-2xl p-6 border border-indigo-900/40 shadow-2xl relative">
-                <div class="flex justify-between items-center mb-4">
-                    <span class="text-sm font-bold text-indigo-400 uppercase tracking-wider">Deck 2 (Cue)</span>
-                    <span class="px-2 py-0.5 rounded bg-indigo-950 text-indigo-300 text-xs font-mono font-bold">KEY 9A | 123.0 BPM</span>
+            <div class="gradient-deck-2 rounded-2xl p-6 border border-purple-900/50 shadow-2xl relative" id="deck2Card">
+                <div class="flex justify-between items-center mb-3">
+                    <div class="flex items-center space-x-2">
+                        <span class="w-2.5 h-2.5 rounded-full bg-purple-400"></span>
+                        <span class="text-xs font-bold text-purple-400 uppercase tracking-widest" id="d2-badge">DECK 2 (CUE)</span>
+                    </div>
+                    <span class="px-2.5 py-1 rounded-lg bg-purple-950 text-purple-300 text-xs font-mono font-bold border border-purple-800" id="d2-key-bpm">9A • 123.0 BPM</span>
                 </div>
-                <h2 class="text-xl font-bold text-white mb-1" id="d2-title">THEMBA - Sound of Freedom</h2>
-                <p class="text-sm text-gray-400 mb-4" id="d2-genre">Afro House • Energy: 90%</p>
-                <div class="h-20 bg-gray-950/80 rounded-lg flex items-center justify-center border border-gray-800 relative overflow-hidden mb-4">
-                    <div class="absolute inset-y-0 left-0 bg-indigo-500/20 w-1/4"></div>
-                    <div class="absolute left-1/4 top-0 bottom-0 w-0.5 bg-indigo-400"></div>
-                    <span class="text-xs text-indigo-300 font-mono z-10">[Pad A: Beat 1] • [Pad B: Main Drop 32s]</span>
+                <h2 class="text-2xl font-black text-white truncate mb-1" id="d2-title">THEMBA - Sound of Freedom</h2>
+                <p class="text-xs text-gray-400 mb-4" id="d2-genre">Afro House • Energy: 90% • Vocal Verse: 32 Bars</p>
+                
+                <!-- Waveform Canvas -->
+                <div class="h-24 bg-gray-950 rounded-xl flex items-end justify-between px-3 py-2 border border-purple-950 relative overflow-hidden mb-4">
+                    <div class="absolute inset-0 bg-purple-500/10 w-1/4"></div>
+                    <div class="absolute left-1/4 top-0 bottom-0 w-0.5 bg-purple-400 z-10 shadow-[0_0_8px_#c084fc]"></div>
+                    <div class="absolute top-2 left-3 text-[10px] text-purple-300 font-mono z-10">[Pad A: Intro 0.0s] [Pad B: Main Drop 32.0s]</div>
+                    <!-- Waveform Bars Mock -->
+                    <div class="w-1.5 bg-purple-500/60 h-6 rounded-t"></div>
+                    <div class="w-1.5 bg-purple-500/70 h-10 rounded-t"></div>
+                    <div class="w-1.5 bg-purple-500/80 h-14 rounded-t"></div>
+                    <div class="w-1.5 bg-purple-400 h-18 rounded-t"></div>
+                    <div class="w-1.5 bg-purple-400 h-22 rounded-t"></div>
+                    <div class="w-1.5 bg-purple-500/80 h-16 rounded-t"></div>
+                    <div class="w-1.5 bg-purple-400 h-14 rounded-t"></div>
+                    <div class="w-1.5 bg-purple-500/70 h-8 rounded-t"></div>
+                    <div class="w-1.5 bg-purple-500/60 h-6 rounded-t"></div>
                 </div>
             </div>
         </div>
 
-        <!-- Live Co-Pilot Next Track Suggestions -->
-        <div class="bg-gray-900/80 rounded-2xl p-6 border border-gray-800">
-            <h3 class="text-lg font-bold text-white mb-4 flex items-center space-x-2">
-                <span>⚡ Live Co-Pilot Mix Recommendations</span>
-                <span class="text-xs font-normal text-gray-400">(Harmonically Compatible with Deck 1)</span>
-            </h3>
-            <div class="space-y-3" id="suggestionsContainer">
-                <div class="flex items-center justify-between p-3.5 bg-gray-800/60 rounded-xl hover:bg-gray-800 transition">
-                    <div class="flex items-center space-x-4">
-                        <span class="text-emerald-400 font-bold font-mono">96%</span>
-                        <div>
-                            <div class="font-bold text-white">MK - Burning Piano</div>
-                            <div class="text-xs text-gray-400">Vocal House • Camelot: 8B • 124.0 BPM</div>
-                        </div>
-                    </div>
-                    <span class="text-xs text-yellow-400 italic">Relative Major/Minor Mix (8A -> 8B)</span>
-                </div>
+        <!-- Hardware Fader Controls Simulation -->
+        <div class="bg-gray-900/80 rounded-2xl p-5 border border-gray-800 shadow-xl flex flex-wrap items-center justify-between gap-4">
+            <div class="flex items-center space-x-4">
+                <span class="text-xs font-bold text-gray-400 uppercase">FLX4 Crossfader:</span>
+                <input type="range" id="crossfaderSlider" min="0" max="100" value="50" class="w-48 accent-cyan-400 cursor-pointer">
+                <span class="text-xs font-mono text-cyan-400" id="crossfaderVal">Center (0.50)</span>
+            </div>
+            <div class="flex items-center space-x-6 text-xs">
+                <div>D1 Vol: <input type="range" id="d1Vol" min="0" max="100" value="100" class="w-24 accent-cyan-400 cursor-pointer"></div>
+                <div>D2 Vol: <input type="range" id="d2Vol" min="0" max="100" value="100" class="w-24 accent-purple-400 cursor-pointer"></div>
+            </div>
+        </div>
+
+        <!-- Live Co-Pilot & Search Results -->
+        <div class="bg-gray-900/90 rounded-2xl p-6 border border-gray-800 shadow-2xl">
+            <div class="flex justify-between items-center mb-4">
+                <h3 class="text-lg font-bold text-white flex items-center space-x-2">
+                    <span>⚡ Live Co-Pilot Harmonic Mix Recommendations</span>
+                </h3>
+                <span class="text-xs text-gray-400 font-mono">Matched against Active Master Deck</span>
+            </div>
+            <div class="space-y-3" id="resultsContainer">
+                <div class="text-center py-6 text-gray-500 text-sm">Loading library tracks...</div>
             </div>
         </div>
     </div>
+
+    <script>
+        async function fetchCopilot() {
+            try {
+                const res = await fetch('/api/copilot');
+                const data = await res.json();
+                
+                // Update Warnings
+                const warnBox = document.getElementById('warningsBanner');
+                if (data.active_warnings && data.active_warnings.length > 0) {
+                    warnBox.innerHTML = data.active_warnings.map(w => `<div class="p-3 bg-red-950/80 border border-red-800 text-red-300 rounded-xl text-xs font-semibold">${w}</div>`).join('');
+                    warnBox.classList.remove('hidden');
+                } else {
+                    warnBox.classList.add('hidden');
+                }
+
+                // Update Suggestions
+                const container = document.getElementById('resultsContainer');
+                if (data.suggested_next_tracks && data.suggested_next_tracks.length > 0) {
+                    container.innerHTML = data.suggested_next_tracks.map(t => `
+                        <div class="flex items-center justify-between p-4 bg-gray-800/60 hover:bg-gray-800/90 border border-gray-700/50 rounded-xl transition">
+                            <div class="flex items-center space-x-4">
+                                <span class="text-emerald-400 font-black font-mono text-base">${t.match_pct}%</span>
+                                <div>
+                                    <div class="font-bold text-white text-sm">${t.artist} - ${t.title}</div>
+                                    <div class="text-xs text-gray-400 font-mono mt-0.5">Key: <span class="text-yellow-400 font-bold">${t.camelot}</span> • ${t.bpm} BPM • Energy: ${t.energy}% • <span class="text-gray-300">${t.subgenre}</span></div>
+                                </div>
+                            </div>
+                            <div class="flex items-center space-x-3">
+                                <span class="text-xs text-yellow-300 italic hidden md:inline">${t.mix_advice}</span>
+                                <button onclick="loadDeck(1, ${t.id})" class="px-3 py-1.5 bg-cyan-950 hover:bg-cyan-900 border border-cyan-700 text-cyan-300 text-xs font-bold rounded-lg transition">Deck 1</button>
+                                <button onclick="loadDeck(2, ${t.id})" class="px-3 py-1.5 bg-purple-950 hover:bg-purple-900 border border-purple-700 text-purple-300 text-xs font-bold rounded-lg transition">Deck 2</button>
+                            </div>
+                        </div>
+                    `).join('');
+                }
+            } catch (err) {
+                console.error(err);
+            }
+        }
+
+        async function loadDeck(deck, trackId) {
+            await fetch('/api/copilot/load', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ deck, track_id: trackId })
+            });
+            fetchCopilot();
+        }
+
+        async function sendFaderEvent() {
+            const cf = parseFloat(document.getElementById('crossfaderSlider').value) / 100.0;
+            const d1 = parseFloat(document.getElementById('d1Vol').value) / 100.0;
+            const d2 = parseFloat(document.getElementById('d2Vol').value) / 100.0;
+            document.getElementById('crossfaderVal').innerText = cf < 0.4 ? `Deck 1 (${cf.toFixed(2)})` : (cf > 0.6 ? `Deck 2 (${cf.toFixed(2)})` : `Center (${cf.toFixed(2)})`);
+            
+            await fetch('/api/flx4/event', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ crossfader: cf, deck1_vol: d1, deck2_vol: d2 })
+            });
+            fetchCopilot();
+        }
+
+        document.getElementById('crossfaderSlider').addEventListener('input', sendFaderEvent);
+        document.getElementById('d1Vol').addEventListener('input', sendFaderEvent);
+        document.getElementById('d2Vol').addEventListener('input', sendFaderEvent);
+
+        document.getElementById('searchInput').addEventListener('keyup', async (e) => {
+            const query = e.target.value.trim();
+            if (query.length > 2) {
+                const res = await fetch(`/api/search?q=${encodeURIComponent(query)}`);
+                const data = await res.json();
+                const container = document.getElementById('resultsContainer');
+                if (data.results && data.results.length > 0) {
+                    container.innerHTML = data.results.map(t => `
+                        <div class="flex items-center justify-between p-4 bg-gray-800/60 hover:bg-gray-800/90 border border-gray-700/50 rounded-xl transition">
+                            <div class="flex items-center space-x-4">
+                                <span class="text-cyan-400 font-black font-mono text-base">${t.match_pct}%</span>
+                                <div>
+                                    <div class="font-bold text-white text-sm">${t.artist} - ${t.title}</div>
+                                    <div class="text-xs text-gray-400 font-mono mt-0.5">Key: <span class="text-yellow-400 font-bold">${t.camelot}</span> • ${t.bpm} BPM • <span class="text-gray-300">${t.subgenre}</span></div>
+                                </div>
+                            </div>
+                            <div class="flex items-center space-x-3">
+                                <span class="text-xs text-yellow-300 italic hidden md:inline">${t.mix_advice}</span>
+                                <button onclick="loadDeck(1, ${t.id})" class="px-3 py-1.5 bg-cyan-950 hover:bg-cyan-900 border border-cyan-700 text-cyan-300 text-xs font-bold rounded-lg transition">Deck 1</button>
+                                <button onclick="loadDeck(2, ${t.id})" class="px-3 py-1.5 bg-purple-950 hover:bg-purple-900 border border-purple-700 text-purple-300 text-xs font-bold rounded-lg transition">Deck 2</button>
+                            </div>
+                        </div>
+                    `).join('');
+                }
+            } else {
+                fetchCopilot();
+            }
+        });
+
+        // Initialize and Poll
+        fetchCopilot();
+        setInterval(fetchCopilot, 3000);
+    </script>
 </body>
 </html>"""
 
@@ -228,7 +369,8 @@ class SonicDJServer:
         SonicDJServerHandler.db = self.db
         SonicDJServerHandler.flx4 = self.flx4
         SonicDJServerHandler.copilot = self.copilot
-        self.httpd = HTTPServer(("127.0.0.1", self.port), SonicDJServerHandler)
+        ThreadingHTTPServer.allow_reuse_address = True
+        self.httpd = ThreadingHTTPServer(("127.0.0.1", self.port), SonicDJServerHandler)
 
     def start_background(self) -> Thread:
         """Starts server in a background thread."""
