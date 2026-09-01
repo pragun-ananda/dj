@@ -448,5 +448,51 @@ def audition(
     console.print(f"[bold green]✓[/] Rendered {duration_sec:.1f}s transition preview to [cyan]{out_path}[/]")
 
 
+@app.command()
+def ui(
+    port: int = typer.Option(8000, "--port", "-p", help="HTTP port to serve UI on"),
+    db_path: Optional[Path] = typer.Option(None, "--db", help="Custom SQLite database file"),
+):
+    """Launch the SonicDJ Interactive Web Workstation & Live Co-Pilot Dashboard."""
+    from sonicdj.ui.server import SonicDJServer
+
+    db = get_db(f"sqlite:///{db_path}" if db_path else None)
+    server = SonicDJServer(db, port=port)
+    server.start_background()
+
+    url = f"http://localhost:{port}"
+    console.print(Panel.fit(
+        f"[bold cyan]🎛️ SonicDJ Workstation & Live Co-Pilot[/]\n"
+        f"Server running at: [bold green]{url}[/]\n"
+        f"Pioneer DDJ-FLX4 Hardware Sync: [bold yellow]Listening[/]\n"
+        f"Press Ctrl+C to stop.",
+        border_style="cyan"
+    ))
+
+    try:
+        import time
+        while True:
+            time.sleep(1)
+    except KeyboardInterrupt:
+        console.print("\n[yellow]Shutting down SonicDJ server...[/yellow]")
+        server.stop()
+
+
+@app.command(name="flx4-monitor")
+def flx4_monitor():
+    """Monitor Pioneer DDJ-FLX4 hardware fader and pad events in real time."""
+    from sonicdj.hardware.flx4 import FLX4Controller
+
+    controller = FLX4Controller()
+    console.print(Panel.fit("[bold cyan]🎛️ Pioneer DDJ-FLX4 Hardware Telemetry Monitor[/]\nListening for MIDI fader and pad events...", border_style="cyan"))
+
+    def on_event(state, event):
+        console.print(f"[dim]{event}[/] | Crossfader: [cyan]{state.crossfader:.2f}[/] | D1 Vol: [green]{state.deck1_volume:.2f}[/] | D2 Vol: [blue]{state.deck2_volume:.2f}[/] | Master: [bold yellow]Deck {state.master_deck}[/]")
+
+    controller.register_listener(on_event)
+    # Simulate an initial heartbeat event
+    controller.update_faders(0.5, 1.0, 1.0)
+
+
 if __name__ == "__main__":
     app()
