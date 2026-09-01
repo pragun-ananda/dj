@@ -72,6 +72,14 @@ class AudioTagEngine:
                 cls._read_flac_tags(audio, meta)
             elif isinstance(audio, MP4):
                 cls._read_mp4_tags(audio, meta)
+        else:
+            # Fallback for ID3 tagged files if audio container parser failed
+            if file_path.suffix.lower() in (".mp3", ".aif", ".aiff", ".wav"):
+                try:
+                    fallback_id3 = ID3(file_path)
+                    cls._read_id3_tags(fallback_id3, meta)
+                except Exception:
+                    pass
 
         # Standardize Camelot & Musical Key
         if meta.camelot or meta.key_raw:
@@ -207,6 +215,10 @@ class AudioTagEngine:
                 meta.energy = float(energy_str)
             except ValueError:
                 pass
+
+        rating_str = get_tag("RATING")
+        if rating_str and rating_str.isdigit():
+            meta.rating = int(rating_str)
 
         comments = get_tag("COMMENT")
         if comments:
