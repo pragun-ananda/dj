@@ -5,5 +5,7 @@ __pycache__/
 *.egg-info/
 dist/
 build/
-.coverage
+demo_music/
+demo_djay_collection.*
 *.db
+.coverage
